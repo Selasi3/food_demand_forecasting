@@ -4,45 +4,45 @@ import pickle
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 
-
 app = FastAPI()
 
 scaler = StandardScaler()
-le = LabelEncoder()
+item_ordered_encoder = LabelEncoder()
+item_ordered_encoder.fit(["A", "B", "C", "D", "E"])
+pickle.dump(item_ordered_encoder, open("item_ordered_encoder.pkl", "wb"))
+
+location_encoder = LabelEncoder()
+location_encoder.fit(["Accra", "Dansoman", "East-Lagon", "Kaneshie", "Mallam"])
+pickle.dump(location_encoder, open("location_encoder.pkl", "wb"))
 
 with open("rf_model.pkl", "rb") as file:
     rf_model = pickle.load(file)
 
+with open("location_encoder.pkl", "rb") as file:
+    location_encoder = pickle.load(file)
+
+with open("item_ordered_encoder.pkl", "rb") as file:
+    item_ordered_encoder = pickle.load(file)
+
+
 
 @app.post("/predict")
-def predict_amount(order:Order):
-    data = pd.DataFrame({
-        'Item Ordered': [order.item_ordered],
-        'Quantity': [order.quantity],
-        'Location': [order.location],
-        'Delivery Time': [order.delivery_time],
-        'Time Of Order': [order.time_of_order]
-       
-    })
+async def predict_amount(order: Order):
 
-    # Convert 'Time Of Order' column to datetime
-    data['Time Of Order'] = pd.to_datetime(data['Time Of Order'], dayfirst=True)
+    
+    order.item_ordered = int(item_ordered_encoder.transform([order.item_ordered])[0])
+    order.location = int(location_encoder.transform([order.location])[0])
 
-    # Perform feature engineering
-    data['Month'] = data['Time Of Order'].dt.month
-    data['Day'] = data['Time Of Order'].dt.day
+    order = [[
+        order.item_ordered,
+        order.quantity,
+        order.location,
+        order.delivery_time,
+        order.month,
+        order.day  # Use 'time_of_order.day' instead of 'day'
+    ]]
+    print(order)
+    # Make the price prediction
+    predicted_price = rf_model.predict(order)
 
-
-    # Apply LabelEncoder to categorical columns
-    categorical_columns = ['Item Ordered', 'Location']
-    for col in categorical_columns:
-        data[col] = le.transform(data[col])
-
-    # Scale the numerical features using the loaded scaler
-    numerical_columns = ['Quantity', 'Delivery Time']
-    data[numerical_columns] = scaler.transform(data[numerical_columns])
-    data.drop(axis=1,columns=["Time Of Order"],inplace=True)
-    # Make the prediction using the loaded RandomForestRegressor model
-    amount_pred = rf_model.predict(data)[0]
-    # Return the prediction result
-    return {"predicted_amount": amount_pred}
+    return {"predicted_price": predicted_price[0]}
